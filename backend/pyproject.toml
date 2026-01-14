@@ -1,0 +1,21 @@
+[project]
+name = "sens-ai-mvp"
+version = "0.1.0"
+description = "Sens-AI MVP - Voice Bot with RAG"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pipecat-ai[webrtc,daily,silero,deepgram,openai,cartesia,local-smart-turn-v3,runner,google,websocket,groq]",
+    "langchain-google-genai>=3.0.3",
+    "langchain-text-splitters>=1.0.0",
+    "motor>=3.7.1",
+    "pydantic>=2.12.4",
+    "pydantic-settings>=2.11.0",
+    "python-multipart>=0.0.20",
+    "pypdf>=4.0.0",
+    "python-docx>=1.0.0",
+    "loguru>=0.7.0",
+    "python-dotenv>=1.0.0",
+]
+
