@@ -20,8 +20,39 @@ A simplified MVP version of the Sens-AI platform featuring a working Pipecat voi
 
 1. **MongoDB Atlas**:
    - Create a cluster
-   - Create a vector search index named `vector_index` on the `document_chunks` collection
-   - Index configuration:
+   - **IMPORTANT**: Create a vector search index before uploading documents
+   - Navigate to your cluster → **Search** tab → **Create Search Index**
+   - Choose **JSON Editor**
+   - Select database: `mvp_db` (or your `DB_NAME`)
+   - Select collection: `document_chunks`
+   - Name the index: `vector_index`
+   - Paste this JSON definition (Vector Search format):
+     ```json
+     {
+       "fields": [
+         {
+           "type": "vector",
+           "path": "embedding",
+           "numDimensions": 768,
+           "similarity": "cosine"
+         },
+         {
+           "type": "filter",
+           "path": "department_id"
+         },
+         {
+           "type": "filter",
+           "path": "tenant_id"
+         },
+         {
+           "type": "filter",
+           "path": "is_disabled"
+         }
+       ]
+     }
+     ```
+   
+   **Note**: The minimal version (only vector field) is:
      ```json
      {
        "fields": [
@@ -34,6 +65,8 @@ A simplified MVP version of the Sens-AI platform featuring a working Pipecat voi
        ]
      }
      ```
+   - Click **Create Search Index** and wait for it to become **Active** (may take a few minutes)
+   - **Note**: Vector Search indexes are only available in MongoDB Atlas, not in local MongoDB
 
 2. **API Keys**:
    - Deepgram API key
@@ -43,30 +76,39 @@ A simplified MVP version of the Sens-AI platform featuring a working Pipecat voi
 3. **Runtime**:
    - Python 3.12+
    - Node.js 18+
+   - [uv](https://github.com/astral-sh/uv) (fast Python package installer)
 
 ## Setup
 
 ### Backend
 
-1. Navigate to backend directory:
+1. Install `uv` (if not already installed):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   # Or with pip:
+   pip install uv
+   ```
+
+2. Navigate to backend directory:
    ```bash
    cd backend
    ```
 
-2. Create virtual environment:
+3. Create virtual environment and install dependencies with `uv`:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   uv pip install -e .
+   ```
+   
+   Or use `uv` directly without activating the venv:
+   ```bash
+   uv sync  # Creates venv and installs dependencies
    ```
 
-3. Install dependencies:
+4. Create `.env` file:
    ```bash
-   pip install -e .
-   ```
-
-4. Create `.env` file from `.env.example`:
-   ```bash
-   cp .env.example .env
+   touch .env
    ```
 
 5. Edit `.env` with your configuration:
@@ -80,9 +122,12 @@ A simplified MVP version of the Sens-AI platform featuring a working Pipecat voi
 
 6. Start the backend:
    ```bash
-   python -m app.main
+   # With uv (recommended):
+   uv run python -m app.main
    # Or with uvicorn:
-   uvicorn app.main:app --reload --port 8000
+   uv run uvicorn app.main:app --reload --port 8000
+   # Or if venv is activated:
+   python -m app.main
    ```
 
 ### Frontend
@@ -109,6 +154,21 @@ A simplified MVP version of the Sens-AI platform featuring a working Pipecat voi
    ```
 
 The frontend will be available at `http://localhost:5173`
+
+### Verify Vector Index
+
+Before uploading documents, verify that your vector search index is set up correctly:
+
+```bash
+# Using the verification script
+cd backend
+uv run python scripts/verify_vector_index.py
+
+# Or check via API
+curl http://localhost:8000/health/vector-index
+```
+
+The index must be **Active** before you can upload documents and use RAG functionality.
 
 ## Usage
 

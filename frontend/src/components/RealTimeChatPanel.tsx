@@ -45,14 +45,18 @@ export default function RealTimeChatPanel({
     const loadDepartments = async () => {
       try {
         const response = await api.get("/departments");
-        setDepartments(response.data);
-        if (response.data.length > 0 && !selectedDeptId) {
-          const firstDept = response.data[0];
+        // Ensure response.data is an array
+        const departmentsData = Array.isArray(response.data) ? response.data : [];
+        setDepartments(departmentsData);
+        if (departmentsData.length > 0 && !selectedDeptId) {
+          const firstDept = departmentsData[0];
           setSelectedDeptId(firstDept._id);
           onDepartmentChange?.(firstDept._id);
         }
       } catch (error) {
         console.error("Failed to load departments:", error);
+        // Ensure departments is always an array even on error
+        setDepartments([]);
       }
     };
     loadDepartments();
@@ -87,14 +91,25 @@ export default function RealTimeChatPanel({
     const endpoint = import.meta.env.VITE_PIPECAT_ENDPOINT || "/stream/connect";
     
     try {
+      console.log("Connecting with department_id:", deptId);
+      console.log("Endpoint:", endpoint);
+      console.log("Full URL:", `${api.defaults.baseURL}${endpoint}`);
+      
       const response = await api.post(endpoint, {
         department_id: deptId
       });
 
-      await client.connect(response.data.ws_url);
+      console.log("Connection response:", response.data);
+      await client.connect(response.data);
     } catch (error: any) {
       console.error("Failed to connect:", error);
-      alert(`Connection Error: ${error?.message || "Unknown error"}`);
+      const errorMessage = error?.response?.data?.detail || error?.message || "Unknown error";
+      console.error("Error details:", {
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message
+      });
+      alert(`Connection Error: ${errorMessage}`);
     }
   };
 
@@ -153,7 +168,7 @@ export default function RealTimeChatPanel({
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white disabled:opacity-50"
           >
             <option value="">Select Department</option>
-            {departments.map((dept) => (
+            {Array.isArray(departments) && departments.map((dept) => (
               <option key={dept._id} value={dept._id}>
                 {dept.name}
               </option>

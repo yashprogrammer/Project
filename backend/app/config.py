@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     DOCUMENT_CHUNKS_COLLECTION: str = "document_chunks"
     
     # Groq Settings
-    GROQ_MODEL: str = "llama-3.1-70b-versatile"
+    GROQ_MODEL: str = "openai/gpt-oss-20b"
     GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
     
     # Transport

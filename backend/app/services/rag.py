@@ -2,7 +2,7 @@ import asyncio
 from typing import Any, Optional
 from bson import ObjectId
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.database import get_database
 from app.services.embeddings import EmbeddingService
@@ -10,37 +10,37 @@ from app.config import settings
 
 
 class ChunkContent(BaseModel):
-    """Clean chunk content for LLM consumption"""
-    text: str
-    file_name: Optional[str] = None
-    score: Optional[float] = None
+    """Clean chunk content for LLM consumption - no IDs or metadata"""
+    text: str = Field(..., description="The actual text content of the chunk")
+    file_name: Optional[str] = Field(None, description="Source file name for context")
+    score: Optional[float] = Field(None, description="Relevance score (0-1)")
 
 
 class ChunkMetadata(BaseModel):
-    """Metadata about a retrieved chunk"""
-    chunk_id: str
-    document_id: str
-    department_id: str
-    tenant_id: Optional[str] = None
-    chunk_index: int
-    score: float
-    file_name: str
+    """Metadata about a retrieved chunk - IDs and technical details"""
+    chunk_id: str = Field(..., description="Unique chunk identifier")
+    document_id: str = Field(..., description="Parent document identifier")
+    department_id: str = Field(..., description="Department identifier")
+    tenant_id: Optional[str] = Field(None, description="Tenant identifier")
+    chunk_index: int = Field(..., description="Index of chunk within document")
+    score: float = Field(..., description="Similarity/relevance score from vector search")
+    file_name: str = Field(..., description="Source file name")
 
 
 class RetrievalMetadata(BaseModel):
     """Metadata about the retrieval operation"""
-    query: str
-    k: int
-    chunks_retrieved: int
-    department_id: Optional[str] = None
-    tenant_id: Optional[str] = None
-    chunks: list[ChunkMetadata] = []
+    query: str = Field(..., description="The search query used")
+    k: int = Field(..., description="Number of chunks requested")
+    chunks_retrieved: int = Field(..., description="Actual number of chunks retrieved")
+    department_id: Optional[str] = Field(None, description="Department filter applied")
+    tenant_id: Optional[str] = Field(None, description="Tenant filter applied")
+    chunks: list[ChunkMetadata] = Field(default_factory=list, description="Metadata for each retrieved chunk")
 
 
 class RetrievalResult(BaseModel):
     """Complete retrieval result with clean data and metadata"""
-    data: list[ChunkContent]
-    metadata: RetrievalMetadata
+    data: list[ChunkContent] = Field(..., description="Clean chunk content for LLM consumption")
+    metadata: RetrievalMetadata = Field(..., description="Metadata about the retrieval operation")
 
 
 embeddings_service = EmbeddingService()
@@ -49,7 +49,7 @@ embeddings_service = EmbeddingService()
 class RAGService:
     def __init__(self, index_name: str = None):
         self.index_name = index_name or settings.VECTOR_INDEX_NAME
-        logger.debug(f"RAGService initialized with index: {self.index_name}")
+        logger.debug("RAGService initialized", index_name=self.index_name)
 
     async def retrieve(
         self,
@@ -73,8 +73,9 @@ class RAGService:
         try:
             logger.info(f"Starting retrieval for query: '{query[:50]}...' (k={k})")
             
+            # Check if collection is available
             if collection is None:
-                raise ConnectionError("MongoDB collection is not initialized.")
+                raise ConnectionError("MongoDB collection is not initialized. Database connection failed.")
             
             # 1. Generate vector embedding
             try:
@@ -148,20 +149,20 @@ class RAGService:
                 logger.error(f"Failed to execute vector search aggregation: {e}")
                 raise
 
-            # 5. Convert to output structure
+            # 5. Convert to output structure - separate clean data from metadata
             chunk_data = []
             chunk_metadata = []
             
             try:
                 for res in results:
-                    # Clean data for LLM
+                    # Clean data for LLM (no IDs, just content)
                     chunk_data.append(ChunkContent(
                         text=res.get("text", ""),
                         file_name=res.get("file_name"),
                         score=res.get("score"),
                     ))
                     
-                    # Metadata
+                    # Metadata (all IDs and technical details)
                     chunk_metadata.append(ChunkMetadata(
                         chunk_id=res.get("chunk_id", ""),
                         document_id=str(res.get("document_id", "")),
@@ -177,7 +178,7 @@ class RAGService:
                 logger.error(f"Failed to process search results: {e}")
                 raise
 
-            # Build the result
+            # Build the result with clean data and metadata
             result = RetrievalResult(
                 data=chunk_data,
                 metadata=RetrievalMetadata(

@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../Sens-ai/sens-ai-client"
+		},
+		{
+			"path": "../../Sens-ai/sens-ai-server"
+		}
+	],
+	"settings": {}
+}

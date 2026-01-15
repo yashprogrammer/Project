@@ -36,6 +36,9 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
+    "http://frontend:80",  # Docker internal network
+    "http://proj3-frontend:80",  # Docker container name
+    "http://proj3-frontend-prod:80",  # Production container name
 ]
 
 app.add_middleware(
@@ -59,6 +62,37 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/health/vector-index")
+def check_vector_index():
+    """Check if vector search index exists and is active"""
+    from app.services.vector_index_service import VectorIndexService
+    
+    service = VectorIndexService()
+    result = service.verify_index_exists()
+    
+    if result.get("status") == "success" and result.get("active"):
+        return {
+            "status": "healthy",
+            "vector_index": {
+                "exists": True,
+                "active": True,
+                "index_name": result.get("index_name"),
+                "message": result.get("message")
+            }
+        }
+    else:
+        return {
+            "status": "unhealthy",
+            "vector_index": {
+                "exists": result.get("exists", False),
+                "active": result.get("active", False),
+                "index_name": result.get("index_name"),
+                "message": result.get("message"),
+                "instructions": service.get_creation_instructions() if result.get("status") == "not_found" else None
+            }
+        }
 
 
 if __name__ == "__main__":

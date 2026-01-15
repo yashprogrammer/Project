@@ -1,0 +1,145 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+*.egg
+*.whl
+
+# Node.js / Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+*.local
+.next/
+out/
+.nuxt/
+.cache/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.prod
+.env.production
+.env.development
+.env.test
+.env.staging
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+*.cover
+*.py,cover
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# TypeScript
+*.tsbuildinfo
+.tsbuildinfo
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Docker (keep Dockerfiles and compose files, ignore volumes and data)
+.docker/
+docker-compose.override.yml
+*.override.yml
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Local storage
+local_storage_data/*
+!local_storage_data/.gitkeep
+storage/
+uploads/
+
+# Lock files (optional - uncomment if you don't want to track them)
+# uv.lock
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Vite
+.vite/
+
+# Tailwind
+.tailwindcss-cache/
+
+# Misc
+*.orig
+*.rej
+*.swo
+*.swp
+.vscode-test/
+.history/
+.parcel-cache/
+

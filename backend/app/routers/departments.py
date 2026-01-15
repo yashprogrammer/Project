@@ -1,6 +1,7 @@
 import os
 import tempfile
 import uuid
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
 from loguru import logger
@@ -30,7 +31,6 @@ async def create_department(department: Department):
         )
     
     # Add timestamps
-    from datetime import datetime
     now = datetime.utcnow()
     department_dict = department.model_dump(exclude={"id"}, exclude_none=True)
     department_dict["created_at"] = now
@@ -38,9 +38,10 @@ async def create_department(department: Department):
     
     # Insert into database
     result = await db.departments.insert_one(department_dict)
-    department_dict["_id"] = result.inserted_id
-    
-    return Department(**department_dict)
+    # Create response with _id as string
+    response_dict = department.model_dump(exclude={"id"}, exclude_none=True)
+    response_dict["_id"] = str(result.inserted_id)
+    return Department(**response_dict)
 
 
 @router.get("/", response_model=List[Department], status_code=status.HTTP_200_OK)
@@ -48,7 +49,14 @@ async def get_departments():
     """Get all departments"""
     db = get_database()
     departments = await db.departments.find({}).to_list(length=None)
-    return [Department(**dept) for dept in departments]
+    # Convert ObjectId to string for _id field
+    result = []
+    for dept in departments:
+        dept_dict = dict(dept)
+        if '_id' in dept_dict and isinstance(dept_dict['_id'], ObjectId):
+            dept_dict['_id'] = str(dept_dict['_id'])
+        result.append(Department(**dept_dict))
+    return result
 
 
 @router.get("/{department_id}", response_model=Department, status_code=status.HTTP_200_OK)
@@ -61,7 +69,10 @@ async def get_department(department_id: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Department not found"
         )
-    return Department(**department)
+    dept_dict = dict(department)
+    if '_id' in dept_dict and isinstance(dept_dict['_id'], ObjectId):
+        dept_dict['_id'] = str(dept_dict['_id'])
+    return Department(**dept_dict)
 
 
 @router.post("/{department_id}/documents", status_code=status.HTTP_201_CREATED)
@@ -113,28 +124,43 @@ async def upload_department_documents(
                     tmp.write(data)
                     temp_file_path = tmp.name
                 
-                # Extract text
-                extracted_text = text_extractor.extract_text(temp_file_path, content_type)
+                # Step 1: Extract text from document
+                try:
+                    extracted_text = text_extractor.extract_text(temp_file_path, content_type)
+                except ValueError as e:
+                    # Unsupported format
+                    logger.warning(f"Unsupported file format: {original_name} - {str(e)}")
+                    continue
+                except FileNotFoundError as e:
+                    logger.error(f"File not found: {original_name} - {str(e)}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Text extraction failed: {original_name} - {str(e)}")
+                    continue
+                
+                logger.info(
+                    "Text extracted from document",
+                    file_name=original_name,
+                    text_length=len(extracted_text or ""),
+                )
                 
                 if not extracted_text or not extracted_text.strip():
-                    logger.warning(f"No text extracted from {original_name}")
+                    logger.warning(f"EMPTY_DOCUMENT: No text content extracted from {original_name}")
                     continue
                 
-                # Split into chunks
+                # Step 2: Split text into chunks
                 chunks = embedding_service.split_text(extracted_text)
-                logger.info(f"Split into {len(chunks)} chunks")
+                logger.info(
+                    "Document text split into chunks",
+                    file_name=original_name,
+                    chunk_count=len(chunks),
+                )
                 
                 if not chunks:
-                    logger.warning(f"No chunks created from {original_name}")
-                    continue
+                    raise ValueError("NO_CHUNKS: Text splitting resulted in no chunks")
                 
-                # Generate embeddings for all chunks
-                embeddings = embedding_service.embed_texts(chunks)
-                logger.info(f"Generated {len(embeddings)} embeddings")
-                
-                # Create document metadata
+                # Create document metadata first
                 storage_key = f"{tenant_id}/departments/{department_id}/{uuid.uuid4().hex}-{original_name}"
-                from datetime import datetime
                 now = datetime.utcnow()
                 
                 doc_dict = {
@@ -152,39 +178,98 @@ async def upload_department_documents(
                     "updated_at": now,
                 }
                 
-                # Insert document
+                # Insert document with processing status
                 doc_result = await db.documents_metadata.insert_one(doc_dict)
                 document_id = doc_result.inserted_id
-                logger.info(f"Document inserted: {document_id}")
+                logger.info("Document inserted with processing status", document_id=str(document_id))
                 
-                # Insert chunks with embeddings
+                # Step 3 & 4: Generate embeddings and store chunks (individual processing with error handling)
                 chunk_documents = []
-                for index, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-                    chunk_doc = {
-                        "document_id": document_id,
-                        "department_id": ObjectId(department_id),
-                        "tenant_id": tenant_id,
-                        "file_name": original_name,
-                        "chunk_id": str(uuid.uuid4()),
-                        "chunk_index": index,
-                        "text": chunk_text,
-                        "embedding": embedding,
-                        "is_disabled": False,
-                    }
-                    chunk_documents.append(chunk_doc)
                 
-                # Bulk insert chunks
-                if chunk_documents:
-                    await db[settings.DOCUMENT_CHUNKS_COLLECTION].insert_many(chunk_documents)
-                    logger.info(f"Inserted {len(chunk_documents)} chunks")
+                for index, chunk_text in enumerate(chunks):
+                    try:
+                        # Generate embedding for this chunk individually
+                        embedding_vector = embedding_service.embed_text(chunk_text)
+                        
+                        # Create chunk document
+                        chunk_doc = {
+                            "document_id": document_id,
+                            "department_id": ObjectId(department_id),
+                            "tenant_id": tenant_id,
+                            "file_name": original_name,
+                            "chunk_id": str(uuid.uuid4()),
+                            "chunk_index": index,
+                            "text": chunk_text,
+                            "embedding": embedding_vector,
+                            "is_disabled": False,
+                        }
+                        chunk_documents.append(chunk_doc)
+                        
+                        # Log progress for large documents
+                        if (index + 1) % 10 == 0 or index == len(chunks) - 1:
+                            logger.debug(
+                                "Chunk embedding progress",
+                                document_id=str(document_id),
+                                chunks_embedded=index + 1,
+                                total_chunks=len(chunks),
+                            )
+                        
+                    except Exception as e:
+                        # If embedding fails for a specific chunk, log but continue
+                        logger.warning(
+                            "Failed to embed chunk",
+                            document_id=str(document_id),
+                            chunk_index=index,
+                            error=str(e),
+                        )
+                        continue
                 
-                # Update document status to completed
-                await db.documents_metadata.update_one(
-                    {"_id": document_id},
-                    {"$set": {"embedding_status": "completed", "updated_at": datetime.utcnow()}}
+                if not chunk_documents:
+                    # Update document status to failed
+                    await db.documents_metadata.update_one(
+                        {"_id": document_id},
+                        {
+                            "$set": {
+                                "embedding_status": "failed",
+                                "updated_at": datetime.utcnow()
+                            }
+                        }
+                    )
+                    raise Exception("EMBEDDING_FAILED: Failed to generate embeddings for all chunks")
+                
+                # Step 5: Bulk insert all chunks
+                await db[settings.DOCUMENT_CHUNKS_COLLECTION].insert_many(chunk_documents)
+                logger.info(
+                    "Chunks inserted into database",
+                    document_id=str(document_id),
+                    chunks_inserted=len(chunk_documents),
                 )
                 
-                doc_dict["_id"] = document_id
+                # Step 6: Update document status to completed
+                await db.documents_metadata.update_one(
+                    {"_id": document_id},
+                    {
+                        "$set": {
+                            "embedding_status": "completed",
+                            "updated_at": datetime.utcnow()
+                        }
+                    }
+                )
+                logger.info(
+                    "Document embedding completed",
+                    document_id=str(document_id),
+                    chunks_created=len(chunk_documents),
+                    total_chunks=len(chunks),
+                )
+                
+                # Convert ObjectId fields to strings for JSON serialization
+                doc_dict["_id"] = str(document_id)
+                doc_dict["department_id"] = str(doc_dict["department_id"])
+                # Convert datetime to ISO format string
+                if isinstance(doc_dict.get("created_at"), datetime):
+                    doc_dict["created_at"] = doc_dict["created_at"].isoformat()
+                if isinstance(doc_dict.get("updated_at"), datetime):
+                    doc_dict["updated_at"] = doc_dict["updated_at"].isoformat()
                 created_docs.append(doc_dict)
                 
                 logger.success(f"Successfully processed {original_name}")
@@ -222,5 +307,19 @@ async def list_department_documents(department_id: str):
         "is_disabled": {"$ne": True}
     }).to_list(length=1000)
     
-    return {"documents": documents, "count": len(documents)}
+    # Convert ObjectId and datetime fields to strings for JSON serialization
+    serialized_documents = []
+    for doc in documents:
+        doc_dict = dict(doc)
+        if '_id' in doc_dict and isinstance(doc_dict['_id'], ObjectId):
+            doc_dict['_id'] = str(doc_dict['_id'])
+        if 'department_id' in doc_dict and isinstance(doc_dict['department_id'], ObjectId):
+            doc_dict['department_id'] = str(doc_dict['department_id'])
+        if 'created_at' in doc_dict and isinstance(doc_dict['created_at'], datetime):
+            doc_dict['created_at'] = doc_dict['created_at'].isoformat()
+        if 'updated_at' in doc_dict and isinstance(doc_dict['updated_at'], datetime):
+            doc_dict['updated_at'] = doc_dict['updated_at'].isoformat()
+        serialized_documents.append(doc_dict)
+    
+    return {"documents": serialized_documents, "count": len(serialized_documents)}
 
